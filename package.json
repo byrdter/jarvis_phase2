@@ -1,0 +1,41 @@
+{
+  "name": "jarvis-agent-sdk",
+  "version": "0.1.0",
+  "description": "JARVIS Phase 2 - Agent SDK layer for persistent automation",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "test": "bun test",
+    "test:hybrid": "bun run test-hybrid.ts",
+    "test:memory": "bun run test-memory-search.ts",
+    "test:vector": "bun run test-vector-search.ts",
+    "test:heartbeat": "bun run test-heartbeat.ts",
+    "test:phase2d": "bun run test-phase-2d.ts",
+    "test:gmail": "bun run test-gmail.ts",
+    "test:calendar": "bun run test-calendar.ts",
+    "test:phase2c": "bun run test-phase-2c.ts",
+    "search": "bun run scripts/search.ts",
+    "index": "bun run scripts/index-vault.ts",
+    "google:auth": "bun run scripts/google-oauth-token.ts",
+    "costs": "bun run scripts/show-costs.ts",
+    "costs:reset": "rm -f data/costs.db && echo '✅ Cost database reset'",
+    "heartbeat:status": "bun run scripts/heartbeat-status.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node-cron": "^3.0.11"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.87",
+    "@xenova/transformers": "^2.17.2",
+    "cron": "^4.4.0",
+    "dotenv": "^17.3.1",
+    "node-cron": "^4.2.1"
+  }
+}
