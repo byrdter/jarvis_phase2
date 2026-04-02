@@ -50,3 +50,12 @@ test-*.ts
 
 # Full implementations (not for public release)
 *.FULL.ts
+
+# Internal preparation files (not for public release)
+PRE-PUSH-CHECKLIST.md
+RELEASE-SUMMARY.md
+GITHUB-RELEASE-GUIDE.md
+prepare-for-github.sh
+README-ORIGINAL.md
+*-backup/
+index.old.ts
