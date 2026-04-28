@@ -59,3 +59,6 @@ prepare-for-github.sh
 README-ORIGINAL.md
 *-backup/
 index.old.ts
+
+# Local-only — contains hardcoded private filesystem paths (per-developer)
+src/api/wikis-registry.ts
