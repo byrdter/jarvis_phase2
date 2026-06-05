@@ -18,7 +18,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
-import { jarvis } from './jarvis-brain';
+import { jarvis } from './jarvis-brain.FULL';
 import { EmbeddingService } from './embeddings';
 
 export interface SearchResult {
