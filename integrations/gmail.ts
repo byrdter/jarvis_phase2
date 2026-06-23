@@ -302,6 +302,53 @@ export class GmailIntegration {
       threadsTotal: data.threadsTotal,
     };
   }
+
+  /**
+   * Send an email (HTML).
+   *
+   * Uses the Gmail API messages.send endpoint, which is authorized by the
+   * gmail.send / gmail.compose / gmail.modify scope. The JARVIS OAuth token
+   * already carries gmail.modify, so this works without re-auth. If `to` is
+   * omitted, sends to the authenticated account itself (self-digest).
+   */
+  async sendMessage(opts: { to?: string; subject: string; html: string; text?: string }): Promise<{ id: string; to: string }> {
+    const token = await this.getAccessToken();
+    const to = opts.to || (await this.getProfile()).emailAddress;
+
+    // RFC 2822 MIME with a UTF-8 HTML body.
+    const headers = [
+      `To: ${to}`,
+      `Subject: =?UTF-8?B?${Buffer.from(opts.subject, 'utf-8').toString('base64')}?=`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from(opts.html, 'utf-8').toString('base64'),
+    ].join('\r\n');
+
+    // base64url (no padding) per Gmail API requirement.
+    const raw = Buffer.from(headers, 'utf-8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    const response = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gmail send failed (${response.status}): ${error}`);
+    }
+    const data = await response.json();
+    return { id: data.id, to };
+  }
 }
 
 // Export singleton instance

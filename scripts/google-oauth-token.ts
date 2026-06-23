@@ -16,6 +16,7 @@ import { spawn } from 'child_process';
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.send', // send the daily digest
   'https://www.googleapis.com/auth/calendar.readonly',
 ].join(' ');
 
