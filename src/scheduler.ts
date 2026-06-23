@@ -348,7 +348,8 @@ Be concise — update the existing pages, don't create new ones.`,
       const digest = buildDigest(items, cadences);
       const res = await deliver(digest);
       const counts = getWikiSearch().reindexAll();
-      return `${items.length} items via ${res.channel} (${res.ok ? 'ok' : res.detail}); reindexed ai-futures=${counts['ai-futures'] ?? 0}`;
+      try { const { buildGraph } = await import('./fetchers/graph'); buildGraph(); } catch (e: any) { /* graph rebuild best-effort */ }
+      return `${items.length} items via ${res.channel} (${res.ok ? 'ok' : res.detail}); reindexed ai-futures=${counts['ai-futures'] ?? 0}; graph rebuilt`;
     },
   },
   {
