@@ -29,8 +29,23 @@ echo "════════════════════════�
 
 cd "$AGENT_SDK_DIR" || { echo "❌ Cannot cd $AGENT_SDK_DIR"; exit 1; }
 
-# Best-effort .env load (Bun does it automatically but we belt-and-suspenders).
-[ -f "$AGENT_SDK_DIR/.env" ] && set -a && source "$AGENT_SDK_DIR/.env" && set +a
+# Load .env. macOS TCC blocks launchd from `source`-ing files inside the Dropbox
+# CloudStorage mount, so prefer a home-copy at ~/.config/jarvis/ai-futures.env
+# (TCC-readable). Fall back to Dropbox for interactive runs from a normal shell.
+# Use set +e around the load so a permission failure doesn't kill the wrapper.
+ENV_HOME="$HOME/.config/jarvis/ai-futures.env"
+ENV_DROPBOX="$AGENT_SDK_DIR/.env"
+set +e
+if [ -r "$ENV_HOME" ]; then
+  echo "→ loading env: $ENV_HOME"
+  set -a; source "$ENV_HOME" 2>/dev/null; set +a
+elif [ -r "$ENV_DROPBOX" ]; then
+  echo "→ loading env: $ENV_DROPBOX"
+  set -a; source "$ENV_DROPBOX" 2>/dev/null; set +a
+else
+  echo "⚠️  no .env found — Telegram/Gmail delivery may fail"
+fi
+set -e
 
 # Day-of-week → which extra cadences to fold in (Bun script chooses these
 # automatically inside the scheduler.ts version of the job; CLI version is
