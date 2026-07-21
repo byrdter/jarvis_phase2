@@ -16,7 +16,8 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
+import { readFileSyncRetry, readdirSyncRetry } from './fs-retry';
 import { join } from 'path';
 
 const WIKI_ROOT = '/Users/terrybyrd/Library/CloudStorage/Dropbox/jarvis-private/ai-futures-wiki';
@@ -216,7 +217,7 @@ function walkMd(dir: string): string[] {
   const out: string[] = [];
   const rec = (d: string) => {
     let entries: string[] = [];
-    try { entries = readdirSync(d); } catch { return; }
+    try { entries = readdirSyncRetry(d); } catch { return; }
     for (const e of entries) {
       const p = join(d, e); const s = statSync(p);
       if (s.isDirectory()) rec(p);
@@ -243,12 +244,32 @@ export function buildGraph() {
   const insTopic = db.prepare('INSERT OR REPLACE INTO topics (id, label) VALUES (?, ?)');
   for (const t of TOPICS) insTopic.run(t.id, t.label);
 
-  // Reset link tables (idempotent build)
+  // Ensure the originals columns exist (migration was additive and may not
+  // have been applied on a fresh DB clone).
+  const cols = db.query<{ name: string }, []>('PRAGMA table_info(items)').all();
+  const colNames = new Set(cols.map((c) => c.name));
+  if (!colNames.has('original_path')) db.exec('ALTER TABLE items ADD COLUMN original_path TEXT');
+  if (!colNames.has('original_kind')) db.exec('ALTER TABLE items ADD COLUMN original_kind TEXT');
+
+  // Preserve item ids across rebuilds so foreign keys from notable_quotes
+  // (and any future quote-like tables) stay valid when new wiki pages are
+  // added. Snapshot existing path -> id mapping; re-INSERT with the saved id
+  // when a path persists; INSERT without id (auto-assign) for new paths.
+  const idMap = new Map<string, number>();
+  for (const r of db.query<{ id: number; path: string }, []>('SELECT id, path FROM items').all()) {
+    idMap.set(r.path, r.id);
+  }
+  const maxId = db.query<{ m: number | null }, []>('SELECT MAX(id) AS m FROM items').get()?.m ?? 0;
+  let nextNewId = (maxId ?? 0) + 1;
+
+  // Reset link tables (idempotent build). NOTE: items is wiped LAST so the
+  // idMap snapshot above is unaffected, and notable_quotes is intentionally
+  // NOT touched here — its rows survive the rebuild via the preserved ids.
   for (const t of ['topic_items', 'entity_mentions', 'coocc_entity', 'lenses_items', 'items']) db.exec(`DELETE FROM ${t};`);
 
   const insItem = db.prepare(`INSERT INTO items
-    (path, category, tier, title, author, source, url, doi, access, needs_fulltext, published, indexed)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+    (id, path, category, tier, title, author, source, url, doi, access, needs_fulltext, published, indexed, original_path, original_kind)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const insLens = db.prepare('INSERT OR IGNORE INTO lenses_items (item_id, lens) VALUES (?, ?)');
   const insMention = db.prepare('INSERT OR REPLACE INTO entity_mentions (item_id, entity_id, count) VALUES (?, ?, ?)');
   const insTopicItem = db.prepare('INSERT OR REPLACE INTO topic_items (topic_id, item_id, score) VALUES (?, ?, ?)');
@@ -259,15 +280,39 @@ export function buildGraph() {
   db.exec('BEGIN');
   for (const abs of files) {
     const rel = abs.replace(wikiDir + '/', '');
-    const content = readFileSync(abs, 'utf-8');
+    const content = readFileSyncRetry(abs, 'utf-8');
     const { fm, body } = parseFrontmatter(content);
     const cat = rel.split('/')[0] || 'uncategorized';
     const needsFt = String(fm.needs_fulltext || '').toLowerCase() === 'true' ? 1 : 0;
-    const r = insItem.run([
+    // Auto-discover canonical original artifact: originals/<rel-without-.md>.<ext>.
+    // PDF preferred (selectable text, deterministic bboxes); PNG fallback.
+    const wikiRoot = wikiDir.replace(/\/wiki$/, '');
+    const stem = rel.replace(/\.md$/i, '');
+    let origPath: string | null = null;
+    let origKind: string | null = null;
+    for (const ext of ['pdf', 'png'] as const) {
+      const candidate = `originals/${stem}.${ext}`;
+      if (existsSync(`${wikiRoot}/${candidate}`)) { origPath = candidate; origKind = ext; break; }
+    }
+    // Resolve a stable id for this path: reuse the prior id if we've seen it
+    // before, otherwise allocate a fresh one above the previous max. This keeps
+    // notable_quotes (and any future FK consumers) linked across rebuilds.
+    const itemId = idMap.get(rel) ?? nextNewId++;
+    const bindings: (string | number | null)[] = [
+      itemId,
       rel, cat, fm.tier || '', fm.title || rel, fm.author || '', fm.source || '',
       fm.url || '', fm.doi || '', fm.access || '', needsFt, fm.published || '', fm.indexed || '',
-    ]);
-    const itemId = Number(r.lastInsertRowid);
+      origPath, origKind,
+    ];
+    // Coerce any stray non-binding values (e.g. arrays from YAML lens fields
+    // when the file lacks proper string quoting) to safe strings.
+    for (let i = 0; i < bindings.length; i++) {
+      const v = bindings[i];
+      if (v !== null && typeof v !== 'string' && typeof v !== 'number') {
+        bindings[i] = JSON.stringify(v);
+      }
+    }
+    insItem.run(bindings);
 
     for (const l of (fm.thesis_lens || []) as string[]) if (LENSES.includes(l as any)) insLens.run(itemId, l);
 

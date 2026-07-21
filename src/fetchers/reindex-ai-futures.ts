@@ -13,6 +13,7 @@ import { WikiSearchIndex } from '../api/wiki-search';
 import { EmbeddingService } from '../embeddings';
 import { getWiki } from '../api/wikis-registry';
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'fs';
+import { readFileSyncRetry, readdirSyncRetry } from './fs-retry';
 import { join } from 'path';
 
 const SLUG = 'ai-futures';
@@ -24,7 +25,7 @@ function walk(dir: string): string[] {
   const out: string[] = [];
   const rec = (d: string) => {
     let entries: string[] = [];
-    try { entries = readdirSync(d); } catch { return; }
+    try { entries = readdirSyncRetry(d); } catch { return; }
     for (const e of entries) {
       const p = join(d, e);
       const s = statSync(p);
@@ -57,9 +58,9 @@ async function main() {
 
   // 3. Update manifest stats
   const manifestPath = join(ROOT, '.manifest.json');
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+  const manifest = JSON.parse(readFileSyncRetry(manifestPath, 'utf-8'));
   let totalWords = 0;
-  for (const f of wikiFiles) totalWords += readFileSync(f, 'utf-8').split(/\s+/).length;
+  for (const f of wikiFiles) totalWords += readFileSyncRetry(f, 'utf-8').split(/\s+/).length;
   let videosReady = 0;
   try {
     const tdir = join(ROOT, 'raw/transcripts');
