@@ -43,8 +43,14 @@ async function main() {
     const query = args.find(a => !a.startsWith('--')) || '';
     const fast = args.includes('--fast');
     const showStats = args.includes('--stats');
-    const maxResults = parseInt(args[args.indexOf('--max-results') + 1] || '5');
-    const minScore = parseFloat(args[args.indexOf('--min-score') + 1] || '0.5');
+    // NOTE: guard indexOf === -1. `args[indexOf(flag) + 1]` with a missing
+    // flag becomes args[0] (the query itself) → parseInt("AI ...") = NaN,
+    // which made maxResults=NaN (empty vector slice) and minScore=NaN
+    // (every result filtered). That silently broke ALL KB search.
+    const mrIdx = args.indexOf('--max-results');
+    const maxResults = mrIdx >= 0 ? (parseInt(args[mrIdx + 1] || '5') || 5) : 5;
+    const msIdx = args.indexOf('--min-score');
+    const minScore = msIdx >= 0 ? (parseFloat(args[msIdx + 1] || '0.25') || 0.25) : 0.25;
     const includeArchived = !args.includes('--no-archived');
 
     // Show stats only

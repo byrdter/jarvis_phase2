@@ -18,7 +18,11 @@
 
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
-import { jarvis } from './jarvis-brain.FULL';
+// NOTE: jarvis-brain.FULL is imported LAZILY inside aiRanking() only. Importing
+// it at module load boots the whole cost-tracking brain and opens data/costs.db
+// (a symlink to ORICO) — which crashes vault reindex/search whenever ORICO isn't
+// mounted. Vector + keyword search never need the brain, so keep it out of the
+// module's load-time dependency graph.
 import { EmbeddingService } from './embeddings';
 
 export interface SearchResult {
@@ -69,7 +73,7 @@ export class MemorySearch {
     const {
       query,
       maxResults = 5,
-      minScore = 0.5,
+      minScore = 0.25,
       searchPath = this.vaultPath,
       includeArchived = false,
       fileTypes = ['.md'],
@@ -130,9 +134,21 @@ export class MemorySearch {
     const vectorScores = new Map<string, number>();
     const keywordScores = new Map<string, number>();
 
-    // Normalize vector scores
-    vectorResults.forEach((result, index) => {
-      vectorScores.set(result.path, result.score);
+    // Normalize vector scores to 0..1 so they are comparable to the
+    // rank-normalized keyword scores below. Raw cosine similarity for
+    // MiniLM tops out around ~0.4-0.6, so blending raw cosine with a
+    // 0..1 keyword rank (and applying a 0.5 gate) filtered out every
+    // real hit. Min-max scale against the strongest hit in this result
+    // set so the best semantic match contributes fully.
+    const rawVecScores = vectorResults.map(r => r.score);
+    const maxVec = rawVecScores.length ? Math.max(...rawVecScores) : 0;
+    const minVec = rawVecScores.length ? Math.min(...rawVecScores) : 0;
+    const vecRange = maxVec - minVec;
+    vectorResults.forEach((result) => {
+      const norm = vecRange > 1e-6
+        ? (result.score - minVec) / vecRange
+        : (maxVec > 0 ? 1 : 0);
+      vectorScores.set(result.path, norm);
     });
 
     // Normalize keyword scores (based on rank)
@@ -286,6 +302,8 @@ For each relevant note (score >= ${minScore}), include:
 Return ONLY the JSON array, no other text. If no notes are relevant, return [].`;
 
     try {
+      // Lazy-load the brain only when AI ranking is actually requested.
+      const { jarvis } = await import('./jarvis-brain.FULL');
       // Use CLI for AI ranking (FREE!)
       const response = await jarvis.think({
         prompt,
